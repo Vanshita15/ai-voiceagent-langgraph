@@ -1,0 +1,7 @@
+langgraph 
+langchain-ollama
+faster-whisper
+pyttsx3
+sounddevice 
+soundfile 
+numpy
