@@ -25,65 +25,89 @@ except ImportError as e:
 # ============================================
 
 class VoiceProcessor:
-    """Handles voice input and output"""
+    """Voice processor with silence detection"""
     
     def __init__(self):
-        if not VOICE_AVAILABLE:
-            raise RuntimeError("Voice packages not installed")
-        
-        # Initialize Speech-to-Text (Whisper)
-        print("Loading Whisper model (this may take a moment)...")
+        print("Loading Whisper...")
         self.whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
-        print("✓ Whisper model loaded")
+        print("✓ Whisper loaded")
         
-        # Initialize Text-to-Speech
+        # TTS setup
         self.tts_engine = pyttsx3.init()
-        self.tts_engine.setProperty('rate', 150)  # Speed
+        self.tts_engine.setProperty('rate', 150)
         self.tts_engine.setProperty('volume', 0.9)
         
-        # Get available voices and set a pleasant one
         voices = self.tts_engine.getProperty('voices')
         if len(voices) > 1:
-            self.tts_engine.setProperty('voice', voices[1].id)  # Usually female voice
+            self.tts_engine.setProperty('voice', voices[1].id)
     
-    def record_audio(self, duration=30, sample_rate=16000):
-        """Record audio from microphone"""
-        print(f"\n🎤 Recording for {duration} seconds... Speak now!")
-        audio = sd.rec(
-            int(duration * sample_rate),
-            samplerate=sample_rate,
-            channels=1,
-            dtype='float32'
-        )
-        sd.wait()
-        print("✓ Recording complete")
+    def record_with_silence_detection(self, sample_rate=16000, silence_threshold=0.01, silence_duration=2.0):
+        """
+        Record until user stops speaking
+        silence_threshold: Volume level to consider as silence
+        silence_duration: Seconds of silence before stopping
+        """
+        print("\n🎤 Listening... (will stop when you finish speaking)")
+        breakpoint()
+        chunk_duration = 0.5  # Record in 0.5 second chunks
+        chunks = []
+        silence_chunks = 0
+        max_silence_chunks = int(silence_duration / chunk_duration)
         
-        # Save temporarily for Whisper
+        while True:
+            # Record a chunk
+            chunk = sd.rec(
+                int(chunk_duration * sample_rate),
+                samplerate=sample_rate,
+                channels=1,
+                dtype='float32'
+            )
+            sd.wait()
+            
+            chunks.append(chunk)
+            
+            # Check if this chunk is silent
+            volume = np.abs(chunk).mean()
+            
+            if volume < silence_threshold:
+                silence_chunks += 1
+                if silence_chunks >= max_silence_chunks:
+                    print("✓ Recording stopped (silence detected)")
+                    break
+            else:
+                silence_chunks = 0  # Reset if sound detected
+            
+            # Safety limit: max 15 seconds
+            if len(chunks) > 30:
+                print("✓ Recording stopped (max duration)")
+                break
+        
+        # Combine all chunks
+        audio = np.concatenate(chunks)
+        
+        # Save temporarily
         temp_file = "temp_audio.wav"
         sf.write(temp_file, audio, sample_rate)
+        
         return temp_file
     
     def speech_to_text(self, audio_file):
-        """Convert speech to text using Whisper"""
+        """Convert speech to text"""
         print("🔄 Converting speech to text...")
         segments, info = self.whisper_model.transcribe(audio_file, beam_size=5)
         
-        text = ""
-        for segment in segments:
-            text += segment.text + " "
+        text = " ".join([segment.text for segment in segments]).strip()
         
         # Clean up
+        import os
         if os.path.exists(audio_file):
             os.remove(audio_file)
         
-        text = text.strip()
-        print(f"✓ Transcribed: '{text}'")
+        print(f"✓ You said: '{text}'")
         return text
     
     def text_to_speech(self, text):
-        
-        """Convert text to speech"""
-        print("\n🔊 Speaking response...")
+        """Speak the response"""
+        print(f"\n🔊 Assistant: {text}")
         self.tts_engine.say(text)
         self.tts_engine.runAndWait()
-

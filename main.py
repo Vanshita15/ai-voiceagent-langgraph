@@ -1,133 +1,115 @@
-print("🔥 MAIN.PY STARTED 🔥")
-from agents1 import create_medical_assistant_graph
-from voice_impl1 import VoiceProcessor,VOICE_AVAILABLE
+from agents1 import create_conversational_graph
+from voice_impl1 import VoiceProcessor
 
-class MedicalVoiceAgent:
-    """Complete voice-enabled medical assistant"""
+
+class ImprovedVoiceAgent:
+    """Better voice agent with proper conversation flow"""
     
     def __init__(self):
-        self.graph = create_medical_assistant_graph()
+        self.graph = create_conversational_graph()
         self.voice_processor = VoiceProcessor()
+        self.conversation_stage = "greeting"
         self.user_profile = {
-            "medications": [],
-            "conditions": []
+            "medications": ["Metformin 500mg - twice daily"],
+            "conditions": ["Type 2 Diabetes"]
         }
         
         print("\n" + "="*60)
-        print("🏥 MEDICAL VOICE ASSISTANT INITIALIZED")
+        print("🏥 MEDICAL VOICE ASSISTANT - READY")
         print("="*60)
+    breakpoint()
+    def start_conversation(self):
+        """Start with greeting"""
+        initial_state = {
+            "conversation_stage": "greeting",
+            "messages": [],
+            "user_input": "",
+            "intent": "",
+            "user_profile": self.user_profile,
+            "response": "",
+            "context": {}
+        }
+        
+        result = self.graph.invoke(initial_state)
+        
+        # Speak greeting
+        self.voice_processor.text_to_speech(result["response"])
+        
+        return result["response"]
     
-    def process_voice_input(self, duration=30):
-        """Process voice input and return response"""
-        # 1. Record audio
-        audio_file = self.voice_processor.record_audio(duration)
+    def process_turn(self):
+        """Process one conversation turn"""
+        # 1. Listen to user
+        audio_file = self.voice_processor.record_with_silence_detection()
         
         # 2. Convert to text
         user_input = self.voice_processor.speech_to_text(audio_file)
         
         if not user_input:
-            return "I didn't catch that. Could you please repeat?"
+            self.voice_processor.text_to_speech("I didn't hear anything. Could you try again?")
+            return
         
-        # 3. Process through LangGraph agent
-        initial_state = {
+        # 3. Process through graph (skip greeting if not first time)
+        state = {
+            "conversation_stage": self.conversation_stage if self.conversation_stage != "greeting" else "asking_need",
             "messages": [],
             "user_input": user_input,
             "intent": "",
             "user_profile": self.user_profile,
             "response": "",
-            "next_action": ""
+            "context": {}
         }
         
-        result = self.graph.invoke(initial_state)
-        response = result["response"]
+        result = self.graph.invoke(state)
         
-        # 4. Convert response to speech
-        self.voice_processor.text_to_speech(response)
+        # Update conversation stage
+        self.conversation_stage = result.get("conversation_stage", "followup")
         
-        return response
-    
-    def add_medication(self, medication):
-        """Add medication to user profile"""
-        self.user_profile["medications"].append(medication)
-        print(f"✓ Added medication: {medication}")
-    
-    def add_condition(self, condition):
-        """Add medical condition to user profile"""
-        self.user_profile["conditions"].append(condition)
-        print(f"✓ Added condition: {condition}")
+        # 4. Speak response
+        self.voice_processor.text_to_speech(result["response"])
+        
+        return result["response"]
     
     def run_interactive(self):
-        """Run interactive voice session"""
+        """Run the interactive session"""
         print("\n" + "="*60)
-        print("🎙️  VOICE MODE ACTIVATED")
+        print("🎙️  VOICE CONVERSATION MODE")
         print("="*60)
         print("\nCommands:")
         print("  - Press ENTER to speak")
         print("  - Type 'quit' to exit")
-        print("  - Type 'profile' to see your profile")
-        print("="*60)
+        print("="*60 + "\n")
+        
+        # Start with greeting
+        self.start_conversation()
         
         while True:
-            command = input("\nPress ENTER to speak (or type command): ").strip().lower()
+            cmd = input("\nPress ENTER to speak (or 'quit'): ").strip().lower()
             
-            if command == 'quit':
-                print("\n🏥 Take care! Goodbye!")
+            if cmd == 'quit':
+                goodbye = "Take care of your health! Goodbye!"
+                self.voice_processor.text_to_speech(goodbye)
                 break
             
-            if command == 'profile':
-                print("\n📋 Your Profile:")
-                print(f"  Medications: {self.user_profile['medications']}")
-                print(f"  Conditions: {self.user_profile['conditions']}")
-                continue
-            
-            if command:
-                # Text input mode
-                initial_state = {
-                    "messages": [],
-                    "user_input": command,
-                    "intent": "",
-                    "user_profile": self.user_profile,
-                    "response": "",
-                    "next_action": ""
-                }
-                result = self.graph.invoke(initial_state)
-                print(f"\n🤖 {result['response']}")
-            else:
-                # Voice input mode
-                try:
-                    response = self.process_voice_input(duration=30)
-                    print(f"\n🤖 Response: {response}")
-                except KeyboardInterrupt:
-                    print("\n\n🏥 Session ended. Take care!")
-                    break
-                except Exception as e:
-                    print(f"\n❌ Error: {e}")
+            try:
+                self.process_turn()
+            except KeyboardInterrupt:
+                print("\n\nGoodbye!")
+                break
+            except Exception as e:
+                print(f"\n❌ Error: {e}")
+                self.voice_processor.text_to_speech("Sorry, I had a problem. Let's try again.")
 
 
 # ============================================
-# MAIN EXECUTION
+# RUN
 # ============================================
 
 if __name__ == "__main__":
-
-    if not VOICE_AVAILABLE:
-        print("\n❌ Voice packages not installed. Install them first:")
-        print("pip install faster-whisper pyttsx3 sounddevice soundfile numpy")
-        exit(1)
     try:
-        # Create agent
-        agent = MedicalVoiceAgent()
-        
-        # Optional: Add user profile info
-        agent.add_condition("Type 2 Diabetes")
-        agent.add_medication("Metformin 500mg - twice daily")
-        
-        # Run interactive voice mode
+        agent = ImprovedVoiceAgent()
         agent.run_interactive()
-        
-    except KeyboardInterrupt:
-        print("\n\n🏥 Session ended. Take care!")
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
