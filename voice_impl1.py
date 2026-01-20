@@ -1,10 +1,7 @@
 print("🔊 Voice implementation module loaded")
 from typing import TypedDict, Annotated, Literal
 from langgraph.graph import StateGraph, END
-import operator
 from datetime import datetime
-import json
-import os
 
 # Voice processing imports
 try:
@@ -130,6 +127,67 @@ class VoiceProcessor:
         sf.write(temp_file, audio, sample_rate)
         
         return temp_file
+
+    def record_audio(self, duration=30, sample_rate=16000):
+        input_device = self._select_input_device()
+
+        try:
+            input_info = sd.query_devices(input_device)
+            print(f"🎛️  Using input device {input_device}: {input_info.get('name', 'Unknown')}")
+        except Exception:
+            print(f"🎛️   error Using input device {input_device}")
+
+        import sys
+        import time
+        import threading
+        import tempfile
+        import os
+
+        stop_event = threading.Event()
+
+        def _wait_for_enter():
+            try:
+                input()
+                stop_event.set()
+            except Exception:
+                # Non-interactive environments may not allow stdin reads
+                return
+
+        if sys.stdin is not None and hasattr(sys.stdin, "isatty") and sys.stdin.isatty():
+            print(f"\n🎤 Recording... (max {duration}s)\n↩️  Press ENTER to stop recording early")
+            threading.Thread(target=_wait_for_enter, daemon=True).start()
+        else:
+            print(f"\n🎤 Recording... (max {duration}s)")
+
+        frames = []
+        start_time = time.monotonic()
+
+        def callback(indata, frame_count, time_info, status):
+            if status:
+                print(status)
+            frames.append(indata.copy())
+            if stop_event.is_set() or (time.monotonic() - start_time) >= float(duration):
+                raise sd.CallbackStop()
+
+        with sd.InputStream(
+            samplerate=sample_rate,
+            channels=1,
+            dtype='float32',
+            device=input_device,
+            callback=callback,
+        ):
+            while not stop_event.is_set() and (time.monotonic() - start_time) < float(duration):
+                sd.sleep(50)
+
+        if len(frames) == 0:
+            audio = np.zeros((0, 1), dtype=np.float32)
+        else:
+            audio = np.concatenate(frames, axis=0)
+
+        fd, path = tempfile.mkstemp(prefix="temp_audio_", suffix=".wav")
+        os.close(fd)
+        sf.write(path, audio, sample_rate)
+        return path
     
     def speech_to_text(self, audio_file):
         """Convert speech to text"""

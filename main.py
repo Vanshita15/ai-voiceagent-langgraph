@@ -1,25 +1,24 @@
 """
-IMPROVED MAIN.PY - Medical Voice Agent with Proper Flow
+FIXED MAIN.PY - Interactive Menu System
 
-main_improved.py
+main.py
 """
 
 print("🔥 MEDICAL VOICE ASSISTANT STARTING... 🔥")
 
-from agents_improved import create_conversational_graph, create_initial_state
+from agents1 import create_conversational_graph, create_initial_state, handle_user_choice
 from voice_impl1 import VoiceProcessor, VOICE_AVAILABLE
 
 
 class MedicalVoiceAgent:
     """
-    Enhanced Medical Voice Agent with Conversation Flow
+    Medical Voice Agent with Interactive Menu
     
     Flow:
-    1. Greeting → Shows menu
-    2. Listen to user choice
-    3. Activate appropriate agent
-    4. Return response
-    5. Continue or end
+    1. Show greeting + menu → WAIT
+    2. User selects service → Process choice
+    3. Agent asks for details if needed → WAIT
+    4. User provides info → Agent responds
     """
     
     def __init__(self):
@@ -34,12 +33,12 @@ class MedicalVoiceAgent:
         
         # User profile
         self.user_profile = {
-            "medications": [],
-            "conditions": []
+            "medications": ["Metformin 500mg - twice daily"],
+            "conditions": ["Type 2 Diabetes"]
         }
         
         # Conversation tracking
-        self.is_first_interaction = True
+        self.current_stage = "greeting"  # greeting, waiting_for_choice, waiting_for_details, complete
         self.conversation_count = 0
         
         print("\n" + "="*60)
@@ -52,14 +51,14 @@ class MedicalVoiceAgent:
             print("⚠️ Voice system not available (text mode only)")
         print("="*60)
     
-    def start_session(self):
+    def show_greeting(self):
         """
-        Start a new session with greeting
+        Show initial greeting and menu
         Returns: greeting message
         """
-        print("\n🎬 Starting new session...")
+        print("\n🎬 Showing menu...")
         
-        # Create initial state for greeting
+        # Create state for greeting
         state = create_initial_state(
             user_input="",
             user_profile=self.user_profile,
@@ -74,8 +73,101 @@ class MedicalVoiceAgent:
         if self.voice_processor:
             self.voice_processor.text_to_speech(greeting)
         
-        self.is_first_interaction = False
+        # Update stage
+        self.current_stage = result.get("stage", "waiting_for_choice")
+        
         return greeting
+    
+    def process_user_choice(self, user_input, input_type="text"):
+        """
+        Process user's menu choice
+        
+        Args:
+            user_input: User's choice (number or text)
+            input_type: "text" or "voice"
+            
+        Returns:
+            dict with response, intent, and stage
+        """
+        print(f"\n📝 Processing user choice: '{user_input}'")
+        
+        # Create state
+        state = create_initial_state(
+            user_input=user_input,
+            user_profile=self.user_profile,
+            is_first_message=False
+        )
+        state["stage"] = "waiting_for_choice"
+        
+        # First, classify the choice
+        choice_state = handle_user_choice(state)
+        intent = choice_state.get("intent", "unclear")
+        
+        print(f"🎯 Intent detected: {intent}")
+        
+        # Now route to appropriate agent
+        # Create a separate graph invocation starting from choice_handler
+        from langgraph.graph import StateGraph, END
+        from agents1 import (
+            ConversationState,
+            symptom_agent,
+            medication_agent,
+            health_advisor_agent,
+            emergency_agent,
+            unclear_handler,
+            route_from_choice,
+            route_after_agent,
+        )
+        
+        # Build mini-graph for this turn
+        workflow = StateGraph(ConversationState)
+        workflow.add_node("choice_handler", handle_user_choice)
+        workflow.add_node("symptom", symptom_agent)
+        workflow.add_node("medication", medication_agent)
+        workflow.add_node("health", health_advisor_agent)
+        workflow.add_node("emergency", emergency_agent)
+        workflow.add_node("unclear", unclear_handler)
+        
+        workflow.set_entry_point("choice_handler")
+        
+        workflow.add_conditional_edges(
+            "choice_handler",
+            route_from_choice,
+            {
+                "symptom": "symptom",
+                "medication": "medication",
+                "health": "health",
+                "emergency": "emergency",
+                "unclear": "unclear"
+            }
+        )
+        
+        for node in ["symptom", "medication", "health", "emergency", "unclear"]:
+            workflow.add_conditional_edges(node, route_after_agent, {"end": END})
+        
+        mini_graph = workflow.compile()
+        
+        # Run through graph
+        result = mini_graph.invoke(state)
+        
+        response = result["response"]
+        new_stage = result.get("stage", "complete")
+        
+        # Update internal state
+        self.current_stage = new_stage
+        self.conversation_count += 1
+        
+        print(f"🤖 Stage: {new_stage}")
+        
+        # Speak response whenever voice is available (demo-friendly)
+        if self.voice_processor:
+            self.voice_processor.text_to_speech(response)
+        
+        return {
+            "response": response,
+            "intent": intent,
+            "stage": new_stage
+        }
     
     def process_text_input(self, user_input):
         """
@@ -87,32 +179,18 @@ class MedicalVoiceAgent:
         Returns:
             dict with response and intent
         """
-        print(f"\n📝 Processing text: '{user_input}'")
+        # If we're at greeting stage, show menu first
+        if self.current_stage == "greeting":
+            greeting = self.show_greeting()
+            # Return greeting and wait for next input
+            return {
+                "response": greeting,
+                "intent": "greeting",
+                "stage": "waiting_for_choice"
+            }
         
-        # Create state
-        state = create_initial_state(
-            user_input=user_input,
-            user_profile=self.user_profile,
-            is_first_message=self.is_first_interaction
-        )
-        
-        # Process through graph
-        result = self.graph.invoke(state)
-        
-        response = result["response"]
-        intent = result.get("intent", "unknown")
-        
-        self.conversation_count += 1
-        self.is_first_interaction = False
-        
-        print(f"🎯 Intent: {intent}")
-        print(f"🤖 Response generated")
-        
-        return {
-            "response": response,
-            "intent": intent,
-            "stage": result.get("stage", "complete")
-        }
+        # Otherwise, process the choice/input
+        return self.process_user_choice(user_input, input_type="text")
     
     def process_voice_input(self, duration=30):
         """
@@ -128,8 +206,15 @@ class MedicalVoiceAgent:
             return {
                 "response": "Voice system not available. Please use text input.",
                 "transcription": "",
-                "intent": "error"
+                "intent": "error",
+                "stage": "error"
             }
+        
+        # If we're at greeting stage, show menu first
+        if self.current_stage == "greeting":
+            greeting = self.show_greeting()
+            # Now wait for voice input
+            print("\n🎤 Now listening for your choice...")
         
         print(f"\n🎤 Starting voice input (max {duration}s)...")
         
@@ -148,34 +233,20 @@ class MedicalVoiceAgent:
                 return {
                     "response": response,
                     "transcription": "",
-                    "intent": "unclear"
+                    "intent": "unclear",
+                    "stage": self.current_stage
                 }
             
             print(f"✓ Transcribed: '{user_input}'")
             
-            # 3. Process through graph
-            state = create_initial_state(
-                user_input=user_input,
-                user_profile=self.user_profile,
-                is_first_message=self.is_first_interaction
-            )
-            
-            result = self.graph.invoke(state)
-            
-            response = result["response"]
-            intent = result.get("intent", "unknown")
-            
-            # 4. Speak the response
-            self.voice_processor.text_to_speech(response)
-            
-            self.conversation_count += 1
-            self.is_first_interaction = False
+            # 3. Process the input
+            result = self.process_user_choice(user_input, input_type="voice")
             
             return {
-                "response": response,
+                "response": result["response"],
                 "transcription": user_input,
-                "intent": intent,
-                "stage": result.get("stage", "complete")
+                "intent": result["intent"],
+                "stage": result["stage"]
             }
         
         except Exception as e:
@@ -188,7 +259,8 @@ class MedicalVoiceAgent:
             return {
                 "response": error_response,
                 "transcription": "",
-                "intent": "error"
+                "intent": "error",
+                "stage": "error"
             }
     
     def add_medication(self, medication):
@@ -206,8 +278,8 @@ class MedicalVoiceAgent:
         return self.user_profile
     
     def reset_session(self):
-        """Reset session state"""
-        self.is_first_interaction = True
+        """Reset session to greeting"""
+        self.current_stage = "greeting"
         self.conversation_count = 0
         print("🔄 Session reset")
     
@@ -227,11 +299,12 @@ class MedicalVoiceAgent:
         print("="*60)
         
         # Start with greeting
-        self.start_session()
+        greeting = self.show_greeting()
+        print(f"\n🤖 {greeting}")
         
         while True:
             try:
-                user_cmd = input("\n💬 You (or press ENTER for voice): ").strip()
+                user_cmd = input("\n💬 Your choice (or press ENTER for voice): ").strip()
                 
                 # Handle commands
                 if user_cmd.lower() == 'quit':
@@ -249,7 +322,8 @@ class MedicalVoiceAgent:
                 
                 elif user_cmd.lower() == 'reset':
                     self.reset_session()
-                    self.start_session()
+                    greeting = self.show_greeting()
+                    print(f"\n🤖 {greeting}")
                     continue
                 
                 elif user_cmd == "":
@@ -259,17 +333,23 @@ class MedicalVoiceAgent:
                         continue
                     
                     result = self.process_voice_input(duration=30)
-                    print(f"\n🎤 You said: {result['transcription']}")
-                    print(f"🤖 Response: {result['response']}")
+                    
+                    if result["transcription"]:
+                        print(f"\n🎤 You said: {result['transcription']}")
+                    print(f"\n🤖 Response: {result['response']}")
+                    
+                    # If waiting for more details, continue loop
+                    if result["stage"] == "waiting_for_details":
+                        print("\n💡 Agent is waiting for more information...")
                 
                 else:
                     # Text input
                     result = self.process_text_input(user_cmd)
-                    print(f"\n🤖 {result['response']}")
+                    print(f"\n🤖 Response: {result['response']}")
                     
-                    # Optionally speak in text mode too
-                    if self.voice_processor:
-                        self.voice_processor.text_to_speech(result['response'])
+                    # If waiting for more details, continue loop
+                    if result["stage"] == "waiting_for_details":
+                        print("\n💡 Agent is waiting for more information...")
             
             except KeyboardInterrupt:
                 print("\n\n👋 Session interrupted. Goodbye!")
@@ -277,13 +357,8 @@ class MedicalVoiceAgent:
             
             except Exception as e:
                 print(f"\n❌ Error: {e}")
-                msg = str(e).lower()
-                if "no working audio input device" in msg or "error querying device" in msg:
-                    self.voice_processor.text_to_speech(
-                        "I can't find a working microphone input. Please connect or enable a microphone and check Windows microphone privacy permissions, then try again."
-                    )
-                else:
-                    self.voice_processor.text_to_speech("Sorry, I had a problem. Let's try again.")
+                import traceback
+                traceback.print_exc()
 
 
 # ============================================
@@ -306,10 +381,6 @@ if __name__ == "__main__":
         # Create agent
         agent = MedicalVoiceAgent()
         
-        # Optional: Pre-load user profile
-        agent.add_condition("Type 2 Diabetes")
-        agent.add_medication("Metformin 500mg - twice daily")
-        
         # Run interactive mode
         agent.run_interactive_cli()
     
@@ -323,41 +394,55 @@ if __name__ == "__main__":
 
 
 """
-🎯 USAGE EXAMPLES:
+🎯 NEW FLOW EXAMPLE:
 
-1. VOICE MODE:
-   You: [Press ENTER]
-   🎤 Recording...
-   You: "I have a headache"
-   🤖 "I understand headaches can be uncomfortable..."
+========================
+SESSION START:
+========================
 
-2. TEXT MODE:
-   You: I have a headache
-   🤖 "I understand headaches can be uncomfortable..."
+Bot: 🔊 "Hello! I'm your Medical Voice Assistant.
 
-3. COMMANDS:
-   You: profile
-   📋 Shows your medical profile
-   
-   You: reset
-   🔄 Starts new conversation with greeting
-   
-   You: quit
-   👋 Exits gracefully
+I can help you with:
 
-CONVERSATION FLOW:
+1️⃣ SYMPTOM CHECK - Analyze your health symptoms
+2️⃣ MEDICATION HELP - Manage your medications
+3️⃣ HEALTH ADVICE - General health tips
+4️⃣ EMERGENCY - Urgent medical guidance
 
-Session Start:
-└─ 🎤 "Hello! I'm your Medical Voice Assistant..."
-   └─ Shows menu (1. Symptoms, 2. Medications, 3. General, 4. Emergency)
+Please tell me which service you need."
 
-User Response:
-└─ "I have a headache"
-   └─ 🧠 Detects intent: symptom_check
-      └─ 🩺 Activates Symptom Agent
-         └─ 🤖 Returns analysis
-            └─ 🔊 Speaks response
+[BOT WAITS - doesn't record automatically]
 
-Next Interaction:
-└─ Can continue conversation or end
+========================
+USER SELECTS OPTION:
+========================
+
+User types: "1"
+OR
+User speaks: "I need symptom check"
+
+Bot: 🔊 "Great! I'll help with your symptoms. 
+     Please describe what you're experiencing."
+
+[BOT WAITS again for details]
+
+========================
+USER PROVIDES DETAILS:
+========================
+
+User: "I have a headache and feel tired"
+
+Bot: 🔊 "I understand headaches can be uncomfortable.
+     This could be from stress or dehydration.
+     Try resting and drinking water.
+     If it persists, see a doctor.
+     
+     Remember, this is not a diagnosis."
+
+========================
+SESSION COMPLETE
+========================
+
+User can type 'reset' to start over
+Or 'quit' to exit
 """

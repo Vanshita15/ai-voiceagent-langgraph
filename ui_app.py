@@ -5,7 +5,7 @@ Beautiful interface with proper conversation stages
 
 from fastapi import FastAPI
 import gradio as gr
-from main_improved import MedicalVoiceAgent
+from main import MedicalVoiceAgent
 from voice_impl1 import VOICE_AVAILABLE
 
 # Create FastAPI app
