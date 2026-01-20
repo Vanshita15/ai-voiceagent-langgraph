@@ -5,3 +5,5 @@ pyttsx3
 sounddevice 
 soundfile 
 numpy
+
+gradio

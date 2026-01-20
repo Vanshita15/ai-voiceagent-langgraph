@@ -277,8 +277,13 @@ class MedicalVoiceAgent:
             
             except Exception as e:
                 print(f"\n❌ Error: {e}")
-                import traceback
-                traceback.print_exc()
+                msg = str(e).lower()
+                if "no working audio input device" in msg or "error querying device" in msg:
+                    self.voice_processor.text_to_speech(
+                        "I can't find a working microphone input. Please connect or enable a microphone and check Windows microphone privacy permissions, then try again."
+                    )
+                else:
+                    self.voice_processor.text_to_speech("Sorry, I had a problem. Let's try again.")
 
 
 # ============================================
