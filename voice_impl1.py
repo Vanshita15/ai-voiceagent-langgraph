@@ -68,65 +68,6 @@ class VoiceProcessor:
                 continue
 
         raise RuntimeError("No working audio input device found. Please connect/enable a microphone and allow microphone access.")
-    
-    def record_with_silence_detection(self, sample_rate=16000, silence_threshold=0.01, silence_duration=2.0):
-        """
-        Record until user stops speaking
-        silence_threshold: Volume level to consider as silence
-        silence_duration: Seconds of silence before stopping
-        """
-        print("\n🎤 Listening... (will stop when you finish speaking)")
-
-        input_device = self._select_input_device()
-
-        try:
-            input_info = sd.query_devices(input_device)
-            print(f"🎛️  Using input device {input_device}: {input_info.get('name', 'Unknown')}")
-        except Exception:
-            print(f"🎛️   error Using input device {input_device}")
-
-        chunk_duration = 0.5  # Record in 0.5 second chunks
-        chunks = []
-        silence_chunks = 0
-        max_silence_chunks = int(silence_duration / chunk_duration)
-        
-        while True:
-            # Record a chunk
-            chunk = sd.rec(
-                int(chunk_duration * sample_rate),
-                samplerate=sample_rate,
-                channels=1,
-                dtype='float32',
-                device=input_device,
-            )
-            sd.wait()
-            
-            chunks.append(chunk)
-            
-            # Check if this chunk is silent
-            volume = np.abs(chunk).mean()
-            
-            if volume < silence_threshold:
-                silence_chunks += 1
-                if silence_chunks >= max_silence_chunks:
-                    print("✓ Recording stopped (silence detected)")
-                    break
-            else:
-                silence_chunks = 0  # Reset if sound detected
-            
-            # Safety limit: max 15 seconds
-            if len(chunks) > 30:
-                print("✓ Recording stopped (max duration)")
-                break
-        
-        # Combine all chunks
-        audio = np.concatenate(chunks)
-        
-        # Save temporarily
-        temp_file = "temp_audio.wav"
-        sf.write(temp_file, audio, sample_rate)
-        
-        return temp_file
 
     def record_audio(self, duration=30, sample_rate=16000):
         input_device = self._select_input_device()
