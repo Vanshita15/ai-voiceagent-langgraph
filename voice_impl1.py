@@ -163,10 +163,12 @@ class VoiceProcessor:
     
     def text_to_speech(self, text):
         """Speak the response"""
-        print(f"\n🔊 Assistant: {text}")
-        self.tts_engine.say(text)
-        self.tts_engine.runAndWait()
-
+        try:
+            print(f"\n🔊 Assistant: {text}")
+            self.tts_engine.say(text)
+            self.tts_engine.runAndWait()
+        except Exception as e:
+            print(f"❌ TTS error: {e}")
     def text_to_speech_file(self, text):
         """Generate TTS audio to a temporary WAV file path (for web UI playback)."""
         import tempfile

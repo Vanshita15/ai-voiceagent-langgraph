@@ -12,6 +12,27 @@ try:
 except ImportError:
     print("❌ Voice module not found")
     VOICE_AVAILABLE = False
+except Exception as e:
+    print(f"⚠️ Voice processor init failed: {e}")
+    VOICE_AVAILABLE = False
+
+
+def speak_response(state: dict, text: str) -> None:
+    if not text:
+        print("🔇 TTS skipped: empty text")
+        return
+    if not state.get("voice_enabled", True):
+        print("🔇 Voice disabled by state")
+        return
+    if not VOICE_AVAILABLE or "voice_processor" not in globals():
+        print("🔇 Voice not available")
+        return
+    try:
+        print("🔊 TTS: speaking...")
+        voice_processor.text_to_speech(text)
+    except Exception as e:
+        print(f"⚠️ TTS failed: {e}")
+
 
 # LLM import
 try:
@@ -184,6 +205,7 @@ def handle_user_choice(state: ConversationState) -> ConversationState:
 
 def symptom_agent(state: ConversationState) -> ConversationState:
     """Symptom analysis agent"""
+    print("🩺 DEBUG: Symptom Agent ACTIVATED!")
     user_input = state["user_input"]
     user_profile = state.get("user_profile", {})
     
@@ -195,6 +217,7 @@ def symptom_agent(state: ConversationState) -> ConversationState:
         state["stage"] = "waiting_for_details"
         state["next_action"] = "stay"
         print("🩺 Symptom Agent: Asking for details...")
+        
         return state
     
     # User has provided symptoms
@@ -241,6 +264,7 @@ You are a caring medical assistant analyzing symptoms.
 
 def medication_agent(state: ConversationState) -> ConversationState:
     """Medication management agent"""
+    print("💊 DEBUG: Medication Agent ACTIVATED!")
     user_input = state["user_input"]
     user_profile = state.get("user_profile", {})
 
@@ -252,6 +276,7 @@ def medication_agent(state: ConversationState) -> ConversationState:
         state["stage"] = "waiting_for_details"
         state["next_action"] = "stay"
         print("💊 Medication Agent: Asking for details...")
+        
         return state
     
     # User has provided medication query
@@ -296,6 +321,7 @@ Your response:"""
 
 def health_advisor_agent(state: ConversationState) -> ConversationState:
     """General health advisor agent"""
+    print("🏃 DEBUG: Health Advisor Agent ACTIVATED!")
     user_input = state["user_input"]
 
     if "conversation_history" not in state or state["conversation_history"] is None:
@@ -306,6 +332,7 @@ def health_advisor_agent(state: ConversationState) -> ConversationState:
         state["stage"] = "waiting_for_details"
         state["next_action"] = "stay"
         print("🏃 Health Advisor: Asking for details...")
+        
         return state
     
     # User has provided health question
@@ -345,6 +372,7 @@ You are a knowledgeable health advisor.
 
 def emergency_agent(state: ConversationState) -> ConversationState:
     """Emergency handler"""
+    print("🚨 DEBUG: Emergency Agent ACTIVATED!")
     response = """🚨 EMERGENCY ALERT!
 
     This sounds like a medical emergency!
@@ -363,11 +391,13 @@ def emergency_agent(state: ConversationState) -> ConversationState:
         state["conversation_history"] = []
     state["conversation_history"].append({"user": state.get("user_input", ""), "assistant": response})
     print("🚨 EMERGENCY AGENT ACTIVATED!")
+    
     return state
 
 
 def unclear_handler(state: ConversationState) -> ConversationState:
     """Handle unclear responses"""
+    print("❓ DEBUG: Unclear Handler ACTIVATED!")
     response = """I didn't quite understand. Please choose one of these options:
 
     1️⃣ SYMPTOM CHECK - If you're feeling unwell
@@ -384,6 +414,7 @@ def unclear_handler(state: ConversationState) -> ConversationState:
         state["conversation_history"] = []
     state["conversation_history"].append({"user": state.get("user_input", ""), "assistant": response})
     print("❓ Unclear - showing menu again")
+    
     return state
 
 
@@ -603,8 +634,7 @@ def run_conversation():
         print(f"\n🤖 Assistant: {state['response']}")
         
         # Speak greeting if voice is enabled
-        if state.get("voice_enabled", True) and VOICE_AVAILABLE:
-            voice_processor.text_to_speech(state["response"])
+        speak_response(state, state.get("response", ""))
         
         # Main conversation loop
         while True:
@@ -623,8 +653,7 @@ def run_conversation():
             print(f"\n🤖 Assistant: {state['response']}")
             
             # Speak response if voice is enabled
-            if state.get("voice_enabled", True) and VOICE_AVAILABLE:
-                voice_processor.text_to_speech(state["response"])
+            speak_response(state, state.get("response", ""))
 
             if state.get("stage") == "exit":
                 break
